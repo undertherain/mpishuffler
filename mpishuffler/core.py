@@ -79,12 +79,12 @@ class ThreadSend(threading.Thread):
 
 
 def redistribute(src, dst, comm, pad=False):
-    cnt_workers = comm.Get_size()
+    cnt_receivers = comm.Get_size()
     data_source = DataSource(src, comm)
-    cnt_samples_per_worker = get_cnt_sample_per_worker(data_source.size_global, cnt_workers)
+    cnt_samples_per_receiver = get_cnt_sample_per_worker(data_source.size_global, cnt_receivers)
     # print(f"samples per worker = {cnt_samples_per_worker}")
     receiver = ThreadReceiv(comm, dst)
-    sender = ThreadSend(comm, cnt_samples_per_worker, data_source, pad)
+    sender = ThreadSend(comm, cnt_samples_per_receiver, data_source, pad)
     receiver.start()
     sender.start()
     receiver.join()
