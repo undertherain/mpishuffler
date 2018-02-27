@@ -1,7 +1,7 @@
 mpishuffler
 ***********
 
-N mpi processes have data in of uneven size. You want to distribute this data evenly to M other processes. That's what mpishuffler is for :D
+N mpi processes have data in portions of uneven size. You want to distribute this data evenly to M other processes. That's what mpishuffler is for :D
 
 How do I get set up?
 ====================
