@@ -7,7 +7,7 @@ def get_cnt_sample_per_worker(size_data, cnt_workers):
     return (size_data + cnt_workers - 1) // cnt_workers
 
 
-def get_ids_per_worker(id_worker, cnt_samples_per_worker, cnt_workers, size_data, pad):
+def get_ids_per_receiver(id_worker, cnt_samples_per_worker, cnt_workers, size_data, pad):
     ids = []
     for i in range(cnt_samples_per_worker):
         next_id = (id_worker + i * cnt_workers)
@@ -63,7 +63,7 @@ class ThreadSend(threading.Thread):
     def run(self):
         cnt_workers = self.comm.Get_size()
         for id_worker in range(cnt_workers):
-            ids = get_ids_per_worker(id_worker, self.cnt_samples_per_worker, cnt_workers, self.data_source.size_global, self.pad)
+            ids = get_ids_per_receiver(id_worker, self.cnt_samples_per_worker, cnt_workers, self.data_source.size_global, self.pad)
 
             lo, hi = get_local_subindices(ids, self.data_source.lo, self.data_source.hi)
             # print(f"sender {comm.Get_rank()}")
