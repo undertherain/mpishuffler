@@ -12,7 +12,7 @@ def get_ids_per_worker(id_worker, cnt_samples_per_worker, cnt_workers, size_data
     for i in range(cnt_samples_per_worker):
         next_id = (id_worker + i * cnt_workers) % size_data
         ids.append(next_id)
-        ids = sorted(ids)
+    ids = sorted(ids)
     return np.array(ids)
 
 
@@ -74,7 +74,7 @@ class ThreadSend(threading.Thread):
             self.comm.send(send_buf, dest=id_worker)
 
 
-def redistribute(src, dst, comm):
+def redistribute(src, dst, comm, pad=True):
     cnt_workers = comm.Get_size()
     data_source = DataSource(src, comm)
     cnt_samples_per_worker = get_cnt_sample_per_worker(data_source.size_global, cnt_workers)
