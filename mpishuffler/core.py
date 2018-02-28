@@ -21,8 +21,8 @@ class MPILogger:
 logger = MPILogger()
 
 
-def get_cnt_sample_per_worker(size_data, cnt_workers):
-    return (size_data + cnt_workers - 1) // cnt_workers
+def get_cnt_samples_per_worker(size_data, cnt_shares):
+    return (size_data + cnt_shares - 1) // cnt_shares
 
 
 def get_ids_per_receiver(id_worker, cnt_samples_per_worker, cnt_workers, size_data, pad):
@@ -66,9 +66,11 @@ class ThreadReceiv(threading.Thread):
         logger.debug("receiving thread initilized")
 
     def run(self):
-        for i in range(self.comm.size):
-            data = self.comm.recv(source=MPI.ANY_SOURCE, tag=TAG_PAYLOAD)
-            self.dest += (data)
+        for _ in range(self.comm.size):
+            cnt_packets = self.comm.recv(source=MPI.ANY_SOURCE, tag=TAG_CNT_PACKETS)
+            for id_packet in range(cnt_packets):
+                data = self.comm.recv(source=MPI.ANY_SOURCE, tag=TAG_PAYLOAD)
+                self.dest += data
 
 
 class ThreadSend(threading.Thread):
@@ -85,33 +87,23 @@ class ThreadSend(threading.Thread):
         cnt_receivers = len(self.receivers)
         for id_receiver in range(cnt_receivers):
             ids = get_ids_per_receiver(id_receiver, self.cnt_samples_per_worker, cnt_receivers, self.data_source.size_global, self.pad)
-            # print("computed ids receiver")
             lo, hi = get_local_subindices(ids, self.data_source.lo, self.data_source.hi)
-            # print(f"sender {self.comm.Get_rank()} computed local subindices as {lo}-{hi}")
-            # if id_worker == 1 and self.comm.Get_rank()==0:
-                # print(f"worker {id_worker} needs ids {ids}")
-                # print(f"sender {self.comm.Get_rank()} has ids {self.data_source.lo} to {self.data_source.hi}")
-                # print(f"worker {id_worker} sub lo, hi =  {lo}, {hi}")
-                # print(f"sender {self.comm.Get_rank()} sending to {id_worker}, lo = {lo}, hi={hi}")
             send_buf = []
             if lo < hi:
                 send_buf = [self.data_source.data[i - self.data_source.lo] for i in ids[lo:hi]]
-                #for i in ids[lo:hi]:
-                    #send_buf.append(self.data_source.data[i - self.data_source.lo])
-            print(f"{self.comm.Get_rank()} about to send {len(send_buf)} to {self.receivers[id_receiver]}")
-            # TODO: frist send a number of packages, then send packagew one by one
-            self.comm.send(send_buf, dest=self.receivers[id_receiver], tag=TAG_PAYLOAD)
+            size_packet = 100
+            cnt_packets = get_cnt_samples_per_worker(len(send_buf), size_packet)
+            self.comm.send(cnt_packets, dest=self.receivers[id_receiver], tag=TAG_CNT_PACKETS)
 
-
-def get_ranks_receivers():
-    return 7
+            for id_packet in range(cnt_packets):
+                self.comm.send(send_buf[id_packet * size_packet: (id_packet + 1) * size_packet], dest=self.receivers[id_receiver], tag=TAG_PAYLOAD)
 
 
 def shuffle(src, dst, comm, pad=False, count_me_in=True):
     ranks_receivers = comm.allgather(comm.Get_rank() if count_me_in else -1)
     ranks_receivers = [i for i in ranks_receivers if i >= 0]
     data_source = DataSource(src, comm)
-    cnt_samples_per_receiver = get_cnt_sample_per_worker(data_source.size_global, len(ranks_receivers))
+    cnt_samples_per_receiver = get_cnt_samples_per_worker(data_source.size_global, len(ranks_receivers))
     logger.debug(f"samples per worker = {cnt_samples_per_receiver}")
     if count_me_in:
         receiver = ThreadReceiv(comm, dst)
@@ -128,18 +120,18 @@ def main():
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     local_data = np.array([], dtype=np.int32)
-#    if rank == 0:
-#        local_data = ["apple", "banana", "dekopon"]
     if rank == 0:
-        local_data = [np.random.random((100,100)) for i in range(10000)]
+        local_data = ["apple", "banana", "dekopon"]
+    #if rank == 0:
+    #    local_data = [np.random.random((100, 100)) for i in range(1000)]
     #if rank == 1:
     #    local_data = np.arange(3)
 
     comm.Barrier()
 
     received_payload = []
-    shuffle(local_data, received_payload, comm, pad=False, count_me_in=(rank<2))
-    # shuffle(local_data, received_payload, comm, pad=False, count_me_in=True)
+    # shuffle(local_data, received_payload, comm, pad=False, count_me_in=(rank<2))
+    shuffle(local_data, received_payload, comm, pad=True, count_me_in=True)
     comm.Barrier()
     print(f"rank {rank}   reveived  {len(received_payload)}")
 
