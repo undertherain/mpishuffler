@@ -53,17 +53,18 @@ class ThreadReceiv(threading.Thread):
 
 
 class ThreadSend(threading.Thread):
-    def __init__(self, comm, cnt_samples_per_worker, data_source, pad):
+    def __init__(self, comm, cnt_samples_per_worker, data_source, pad, receivers):
         threading.Thread.__init__(self)
         self.comm = comm
         self.cnt_samples_per_worker = cnt_samples_per_worker
         self.data_source = data_source
         self.pad = pad
+        self.receivers = receivers
 
     def run(self):
-        cnt_workers = self.comm.Get_size()
-        for id_worker in range(cnt_workers):
-            ids = get_ids_per_receiver(id_worker, self.cnt_samples_per_worker, cnt_workers, self.data_source.size_global, self.pad)
+        cnt_receivers = len(self.receivers)
+        for id_receiver in range(cnt_receivers):
+            ids = get_ids_per_receiver(id_receiver, self.cnt_samples_per_worker, cnt_receivers, self.data_source.size_global, self.pad)
 
             lo, hi = get_local_subindices(ids, self.data_source.lo, self.data_source.hi)
             # print(f"sender {comm.Get_rank()}")
@@ -75,19 +76,26 @@ class ThreadSend(threading.Thread):
             send_buf = []
             for i in ids[lo:hi]:
                 send_buf.append(self.data_source.data[i - self.data_source.lo])
-            self.comm.send(send_buf, dest=id_worker)
+            self.comm.send(send_buf, dest=self.receivers[id_receiver])
 
 
-def redistribute(src, dst, comm, pad=False):
-    cnt_receivers = comm.Get_size()
+def get_ranks_receivers():
+    return 7
+
+
+def shuffle(src, dst, comm, pad=False, count_me_in=True):
+    ranks_receivers = comm.allgather(comm.Get_rank() if count_me_in else -1)
+    ranks_receivers = [i for i in ranks_receivers if i >= 0]
     data_source = DataSource(src, comm)
-    cnt_samples_per_receiver = get_cnt_sample_per_worker(data_source.size_global, cnt_receivers)
+    cnt_samples_per_receiver = get_cnt_sample_per_worker(data_source.size_global, len(ranks_receivers))
     # print(f"samples per worker = {cnt_samples_per_worker}")
-    receiver = ThreadReceiv(comm, dst)
-    sender = ThreadSend(comm, cnt_samples_per_receiver, data_source, pad)
-    receiver.start()
+    if count_me_in:
+        receiver = ThreadReceiv(comm, dst)
+        receiver.start()
+    sender = ThreadSend(comm, cnt_samples_per_receiver, data_source, pad, ranks_receivers)
     sender.start()
-    receiver.join()
+    if count_me_in:
+        receiver.join()
     sender.join()
 
 
@@ -96,14 +104,14 @@ def main():
     rank = comm.Get_rank()
     local_data = np.array([], dtype=np.int32)
     if rank == 0:
-        local_data = ["apple", "banana"]
+        local_data = ["apple", "banana", "dekopon"]
     #if rank == 1:
     #    local_data = np.arange(3)
 
     comm.Barrier()
 
     received_payload = []
-    redistribute(local_data, received_payload, comm, True)
+    shuffle(local_data, received_payload, comm, pad=False, count_me_in=(rank<2))
     comm.Barrier()
     print(f"rank {rank}   reveived  {received_payload}")
 

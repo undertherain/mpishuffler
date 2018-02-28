@@ -1,1 +1,1 @@
-from .core import redistribute
+from .core import shuffle

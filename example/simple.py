@@ -1,5 +1,5 @@
 from mpi4py import MPI
-from mpishuffler import redistribute
+from mpishuffler import shuffle
 
 
 def load_super_huge_data():
@@ -13,7 +13,7 @@ def main():
     if rank == 0:
         local_data = load_super_huge_data()
     received_payload = []
-    redistribute(local_data, received_payload, comm)
+    shuffle(local_data, received_payload, comm)
     print(f"rank {rank} reveived  {received_payload}")
 
 
