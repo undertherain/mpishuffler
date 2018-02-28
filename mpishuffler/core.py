@@ -1,6 +1,21 @@
 from mpi4py import MPI
 import numpy as np
 import threading
+import logging
+
+
+
+class MPILogger:
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+        self.comm = MPI.COMM_WORLD
+    
+    def debug(self, msg):
+        if self.comm.Get_rank() == 0:
+            self.logger.debug(msg)
+
+
+logger = MPILogger()
 
 
 def get_cnt_sample_per_worker(size_data, cnt_workers):
@@ -45,6 +60,7 @@ class ThreadReceiv(threading.Thread):
         threading.Thread.__init__(self)
         self.comm = comm
         self.dest = dest
+        logger.debug("receiving thread initilized")
 
     def run(self):
         for i in range(self.comm.size):
@@ -60,22 +76,27 @@ class ThreadSend(threading.Thread):
         self.data_source = data_source
         self.pad = pad
         self.receivers = receivers
+        logger.debug("sending thread initilized")
 
     def run(self):
         cnt_receivers = len(self.receivers)
         for id_receiver in range(cnt_receivers):
             ids = get_ids_per_receiver(id_receiver, self.cnt_samples_per_worker, cnt_receivers, self.data_source.size_global, self.pad)
-
+            # print("computed ids receiver")
             lo, hi = get_local_subindices(ids, self.data_source.lo, self.data_source.hi)
-            # print(f"sender {comm.Get_rank()}")
+            # print(f"sender {self.comm.Get_rank()} computed local subindices as {lo}-{hi}")
             # if id_worker == 1 and self.comm.Get_rank()==0:
                 # print(f"worker {id_worker} needs ids {ids}")
                 # print(f"sender {self.comm.Get_rank()} has ids {self.data_source.lo} to {self.data_source.hi}")
                 # print(f"worker {id_worker} sub lo, hi =  {lo}, {hi}")
                 # print(f"sender {self.comm.Get_rank()} sending to {id_worker}, lo = {lo}, hi={hi}")
             send_buf = []
-            for i in ids[lo:hi]:
-                send_buf.append(self.data_source.data[i - self.data_source.lo])
+            if lo < hi:
+                send_buf = [self.data_source.data[i - self.data_source.lo] for i in ids[lo:hi]]
+                #for i in ids[lo:hi]:
+                    #send_buf.append(self.data_source.data[i - self.data_source.lo])
+            print(f"{self.comm.Get_rank()} about to send {len(send_buf)} to {self.receivers[id_receiver]}")
+            # TODO: frist send a number of packages, then send packagew one by one
             self.comm.send(send_buf, dest=self.receivers[id_receiver])
 
 
@@ -88,7 +109,7 @@ def shuffle(src, dst, comm, pad=False, count_me_in=True):
     ranks_receivers = [i for i in ranks_receivers if i >= 0]
     data_source = DataSource(src, comm)
     cnt_samples_per_receiver = get_cnt_sample_per_worker(data_source.size_global, len(ranks_receivers))
-    # print(f"samples per worker = {cnt_samples_per_worker}")
+    logger.debug(f"samples per worker = {cnt_samples_per_receiver}")
     if count_me_in:
         receiver = ThreadReceiv(comm, dst)
         receiver.start()
@@ -100,11 +121,14 @@ def shuffle(src, dst, comm, pad=False, count_me_in=True):
 
 
 def main():
+    logging.basicConfig(level=logging.DEBUG)
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     local_data = np.array([], dtype=np.int32)
+#    if rank == 0:
+#        local_data = ["apple", "banana", "dekopon"]
     if rank == 0:
-        local_data = ["apple", "banana", "dekopon"]
+        local_data = [np.random.random((100,100)) for i in range(55000)]
     #if rank == 1:
     #    local_data = np.arange(3)
 
@@ -112,8 +136,9 @@ def main():
 
     received_payload = []
     shuffle(local_data, received_payload, comm, pad=False, count_me_in=(rank<2))
+    # shuffle(local_data, received_payload, comm, pad=False, count_me_in=True)
     comm.Barrier()
-    print(f"rank {rank}   reveived  {received_payload}")
+    print(f"rank {rank}   reveived  {len(received_payload)}")
 
 
 if __name__ == "__main__":
