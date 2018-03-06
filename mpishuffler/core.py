@@ -75,6 +75,7 @@ class ThreadReceiv(threading.Thread):
             if tag == TAG_CNT_PACKETS:
                 cnt_packets += buf
                 cnt_sizes += 1
+                print("received req for ", buf)
             else:
                 self.dest += buf
                 cnt_packets -= 1
@@ -95,18 +96,21 @@ class ThreadSend(threading.Thread):
 
     def run(self):
         cnt_receivers = len(self.receivers)
-        for id_receiver in self.receivers:
+        print("receivers: ", self.receivers)
+        for id_receiver in range(len(self.receivers)):
             ids = get_ids_per_receiver(id_receiver, self.cnt_samples_per_worker, cnt_receivers, self.data_source.size_global, self.pad)
+            logger.debug(f"sender {self.comm.Get_rank()} , ids  for rcver {id_receiver} : {ids}")
             lo, hi = get_local_subindices(ids, self.data_source.lo, self.data_source.hi)
             send_buf = []
+            logger.debug(f"sender {self.comm.Get_rank()}  subindices for rcver {id_receiver} as {lo}-{hi}")
             if lo < hi:
                 send_buf = [self.data_source.data[i - self.data_source.lo] for i in ids[lo:hi]]
             size_packet = 100
             cnt_packets = get_cnt_samples_per_worker(len(send_buf), size_packet)
-            self.comm.send(cnt_packets, dest=id_receiver, tag=TAG_CNT_PACKETS)
+            self.comm.send(cnt_packets, dest=self.receivers[id_receiver], tag=TAG_CNT_PACKETS)
 
             for id_packet in range(cnt_packets):
-                self.comm.send(send_buf[id_packet * size_packet: (id_packet + 1) * size_packet], dest=id_receiver, tag=TAG_PAYLOAD)
+                self.comm.send(send_buf[id_packet * size_packet: (id_packet + 1) * size_packet], dest=self.receivers[id_receiver], tag=TAG_PAYLOAD)
 
 
 def shuffle(src, dst, comm, pad=False, count_me_in=True):
@@ -133,22 +137,24 @@ def main():
     received_payload = []
     if rank == 0:
         local_data = ["apple", "banana", "dekopon"]
+        local_data = np.arange(20)
 
 #    shuffle(local_data, received_payload, comm, pad=True, count_me_in=True)
 #    received_payload = []
 
-    if rank % 3 ==  0:
-        local_data = [np.random.random((100, 100)) for i in range(1000)]
+#    if rank % 3 ==  0:
+#        local_data = [np.random.random((100, 100)) for i in range(1000)]
     #if rank == 1:
     #    local_data = np.arange(3)
 
     comm.Barrier()
 
     received_payload = []
-    # shuffle(local_data, received_payload, comm, pad=False, count_me_in=(rank<2))
-    shuffle(local_data, received_payload, comm, pad=True, count_me_in=True)
+    shuffle(local_data, received_payload, comm, pad=False, count_me_in=(rank == 5))
+    # shuffle(local_data, received_payload, comm, pad=True, count_me_in=True)
     comm.Barrier()
-    print(f"rank {rank}   reveived  {len(received_payload)}")
+    # print(f"rank {rank}   reveived  {len(received_payload)}")
+    print(f"rank {rank}   reveived  {received_payload}")
 
 
 if __name__ == "__main__":
