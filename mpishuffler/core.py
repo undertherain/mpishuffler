@@ -1,3 +1,4 @@
+import mpi4py
 from mpi4py import MPI
 import numpy as np
 import threading
@@ -6,6 +7,9 @@ import logging
 
 TAG_CNT_PACKETS = 11
 TAG_PAYLOAD = 12
+
+mpi4py.rc.threaded = True
+mpi4py.rc.thread_level = "multiple"
 
 
 class MPILogger:
@@ -26,6 +30,7 @@ def get_cnt_samples_per_worker(size_data, cnt_shares):
 
 
 def get_ids_per_receiver(id_worker, cnt_samples_per_worker, cnt_workers, size_data, pad):
+    assert id_worker < cnt_workers
     ids = []
     for i in range(cnt_samples_per_worker):
         next_id = (id_worker + i * cnt_workers)
@@ -70,7 +75,7 @@ class ThreadReceiv(threading.Thread):
         cnt_packets = 0
         while True:
             status = MPI.Status()
-            buf = self.comm.recv(source=MPI.ANY_SOURCE,  status=status)
+            buf = self.comm.recv(source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG, status=status)
             tag = status.Get_tag()
             if tag == TAG_CNT_PACKETS:
                 cnt_packets += buf
@@ -96,21 +101,23 @@ class ThreadSend(threading.Thread):
 
     def run(self):
         cnt_receivers = len(self.receivers)
-        print("receivers: ", self.receivers)
+        # print("receivers: ", self.receivers)
         for id_receiver in range(len(self.receivers)):
             ids = get_ids_per_receiver(id_receiver, self.cnt_samples_per_worker, cnt_receivers, self.data_source.size_global, self.pad)
-            logger.debug(f"sender {self.comm.Get_rank()} , ids  for rcver {id_receiver} : {ids}")
+            # logger.debug(f"sender {self.comm.Get_rank()} , ids  for rcver {id_receiver} : {ids}")
             lo, hi = get_local_subindices(ids, self.data_source.lo, self.data_source.hi)
             send_buf = []
             logger.debug(f"sender {self.comm.Get_rank()}  subindices for rcver {id_receiver} as {lo}-{hi}")
             if lo < hi:
                 send_buf = [self.data_source.data[i - self.data_source.lo] for i in ids[lo:hi]]
             size_packet = 100
+            logger.debug(f"sender {self.comm.Get_rank()}  send cnt_packets = {cnt_packets} to {self.receivers[id_receiver]}")
             cnt_packets = get_cnt_samples_per_worker(len(send_buf), size_packet)
             self.comm.send(cnt_packets, dest=self.receivers[id_receiver], tag=TAG_CNT_PACKETS)
 
             for id_packet in range(cnt_packets):
                 self.comm.send(send_buf[id_packet * size_packet: (id_packet + 1) * size_packet], dest=self.receivers[id_receiver], tag=TAG_PAYLOAD)
+        print(f"sender {self.comm.Get_rank()}  done")
 
 
 def shuffle(src, dst, comm, pad=False, count_me_in=True):
@@ -133,28 +140,25 @@ def main():
     logging.basicConfig(level=logging.DEBUG)
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
-    local_data = np.array([], dtype=np.int32)
     received_payload = []
+    local_data = []
     if rank == 0:
         local_data = ["apple", "banana", "dekopon"]
-        local_data = np.arange(20)
-
-#    shuffle(local_data, received_payload, comm, pad=True, count_me_in=True)
-#    received_payload = []
-
-#    if rank % 3 ==  0:
-#        local_data = [np.random.random((100, 100)) for i in range(1000)]
+    received_payload = []
+    shuffle(local_data, received_payload, comm, pad=False, count_me_in=(rank % 3 == 0))
     #if rank == 1:
     #    local_data = np.arange(3)
 
     comm.Barrier()
+    if rank % 3 ==  0:
+        local_data = [np.random.random((100, 100)) for i in range(10000)]
 
     received_payload = []
-    shuffle(local_data, received_payload, comm, pad=False, count_me_in=(rank == 5))
+    shuffle(local_data, received_payload, comm, pad=False, count_me_in=True)
     # shuffle(local_data, received_payload, comm, pad=True, count_me_in=True)
     comm.Barrier()
-    # print(f"rank {rank}   reveived  {len(received_payload)}")
-    print(f"rank {rank}   reveived  {received_payload}")
+    print(f"rank {rank}   reveived  {len(received_payload)}")
+    # print(f"rank {rank}   reveived  {received_payload}")
 
 
 if __name__ == "__main__":
