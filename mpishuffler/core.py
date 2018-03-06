@@ -18,8 +18,9 @@ class MPILogger:
         self.comm = MPI.COMM_WORLD
 
     def debug(self, msg):
-        if self.comm.Get_rank() == 0:
-            self.logger.debug(msg)
+        #if self.comm.Get_rank() == 0:
+        #self.logger.debug(msg)
+        print(msg)
 
 
 logger = MPILogger()
@@ -68,24 +69,32 @@ class ThreadReceiv(threading.Thread):
         threading.Thread.__init__(self)
         self.comm = comm
         self.dest = dest
-        logger.debug("receiving thread initilized")
+        logger.debug(f"receiving thread initilized on rank {self.comm.Get_rank()}")
 
     def run(self):
         cnt_sizes = 0
         cnt_packets = 0
-        while True:
-            status = MPI.Status()
-            buf = self.comm.recv(source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG, status=status)
-            tag = status.Get_tag()
-            if tag == TAG_CNT_PACKETS:
-                cnt_packets += buf
-                cnt_sizes += 1
-                print("received req for ", buf)
-            else:
-                self.dest += buf
-                cnt_packets -= 1
-            if (cnt_sizes >= self.comm.size) and (cnt_packets == 0):
-                break
+        try:
+            while True:
+                status = MPI.Status()
+                print(f"receiver {self.comm.Get_rank()} waiting, got {cnt_sizes} size updates")
+                buf = self.comm.recv(source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG, status=status)
+                tag = status.Get_tag()
+                if tag == TAG_CNT_PACKETS:
+                    cnt_packets += buf
+                    cnt_sizes += 1
+                    print("received req for ", buf)
+                else:
+                    self.dest += buf
+                    cnt_packets -= 1
+                if (cnt_sizes >= self.comm.size) and (cnt_packets == 0):
+                    break
+        except Exception:
+            exc = sys.exc_info()
+            exc_type, exc_obj, exc_trace = exc
+            print("exception in receiver thread:")
+            print(exc_type, exc_obj)
+            print(exc_trace)
         print(f"receiver {self.comm.Get_rank()}  done")
 
 
@@ -100,24 +109,33 @@ class ThreadSend(threading.Thread):
         logger.debug("sending thread initilized")
 
     def run(self):
-        cnt_receivers = len(self.receivers)
-        # print("receivers: ", self.receivers)
-        for id_receiver in range(len(self.receivers)):
-            ids = get_ids_per_receiver(id_receiver, self.cnt_samples_per_worker, cnt_receivers, self.data_source.size_global, self.pad)
-            # logger.debug(f"sender {self.comm.Get_rank()} , ids  for rcver {id_receiver} : {ids}")
-            lo, hi = get_local_subindices(ids, self.data_source.lo, self.data_source.hi)
-            send_buf = []
-            logger.debug(f"sender {self.comm.Get_rank()}  subindices for rcver {id_receiver} as {lo}-{hi}")
-            if lo < hi:
-                send_buf = [self.data_source.data[i - self.data_source.lo] for i in ids[lo:hi]]
-            size_packet = 100
-            logger.debug(f"sender {self.comm.Get_rank()}  send cnt_packets = {cnt_packets} to {self.receivers[id_receiver]}")
-            cnt_packets = get_cnt_samples_per_worker(len(send_buf), size_packet)
-            self.comm.send(cnt_packets, dest=self.receivers[id_receiver], tag=TAG_CNT_PACKETS)
+        try:
+            cnt_receivers = len(self.receivers)
+            # print("receivers: ", self.receivers)
+            for id_receiver in range(len(self.receivers)):
+                ids = get_ids_per_receiver(id_receiver, self.cnt_samples_per_worker, cnt_receivers, self.data_source.size_global, self.pad)
+                # logger.debug(f"sender {self.comm.Get_rank()} , ids  for rcver {id_receiver} : {ids}")
+                lo, hi = get_local_subindices(ids, self.data_source.lo, self.data_source.hi)
+                send_buf = []
+                logger.debug(f"sender {self.comm.Get_rank()}  subindices for rcver {id_receiver} as {lo}-{hi}, ids = {ids}")
+                print(self.data_source.data)
+                if lo < hi:
+                    send_buf = [self.data_source.data[i - self.data_source.lo] for i in ids[lo:hi]]
+                # print(f"send buf on {self.comm.Get_rank()}: {send_buf}")
+                size_packet = 100
+                cnt_packets = get_cnt_samples_per_worker(len(send_buf), size_packet)
+                logger.debug(f"sender {self.comm.Get_rank()}  sending cnt_packets = {cnt_packets} to {self.receivers[id_receiver]}")
+                self.comm.send(cnt_packets, dest=self.receivers[id_receiver], tag=TAG_CNT_PACKETS)
 
-            for id_packet in range(cnt_packets):
-                self.comm.send(send_buf[id_packet * size_packet: (id_packet + 1) * size_packet], dest=self.receivers[id_receiver], tag=TAG_PAYLOAD)
-        print(f"sender {self.comm.Get_rank()}  done")
+                for id_packet in range(cnt_packets):
+                    self.comm.send(send_buf[id_packet * size_packet: (id_packet + 1) * size_packet], dest=self.receivers[id_receiver], tag=TAG_PAYLOAD)
+            print(f"sender {self.comm.Get_rank()}  done")
+        except Exception:
+            exc = sys.exc_info()
+            exc_type, exc_obj, exc_trace = exc
+            print("exception in sender thread:")
+            print(exc_type, exc_obj)
+            print(exc_trace)
 
 
 def shuffle(src, dst, comm, pad=False, count_me_in=True):
@@ -146,12 +164,13 @@ def main():
         local_data = ["apple", "banana", "dekopon"]
     received_payload = []
     shuffle(local_data, received_payload, comm, pad=False, count_me_in=(rank % 3 == 0))
-    #if rank == 1:
-    #    local_data = np.arange(3)
-
     comm.Barrier()
+    if rank == 0:
+        "---- stage 2"
+    #    local_data = np.arange(3)
+    print ("")
     if rank % 3 ==  0:
-        local_data = [np.random.random((100, 100)) for i in range(10000)]
+        local_data = [np.random.random((100, 100)) for i in range(100)]
 
     received_payload = []
     shuffle(local_data, received_payload, comm, pad=False, count_me_in=True)
