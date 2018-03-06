@@ -66,11 +66,21 @@ class ThreadReceiv(threading.Thread):
         logger.debug("receiving thread initilized")
 
     def run(self):
-        for _ in range(self.comm.size):
-            cnt_packets = self.comm.recv(source=MPI.ANY_SOURCE, tag=TAG_CNT_PACKETS)
-            for id_packet in range(cnt_packets):
-                data = self.comm.recv(source=MPI.ANY_SOURCE, tag=TAG_PAYLOAD)
-                self.dest += data
+        cnt_sizes = 0
+        cnt_packets = 0
+        while True:
+            status = MPI.Status()
+            buf = self.comm.recv(source=MPI.ANY_SOURCE,  status=status)
+            tag = status.Get_tag()
+            if tag == TAG_CNT_PACKETS:
+                cnt_packets += buf
+                cnt_sizes += 1
+            else:
+                self.dest += buf
+                cnt_packets -= 1
+            if (cnt_sizes >= self.comm.size) and (cnt_packets == 0):
+                break
+        print(f"receiver {self.comm.Get_rank()}  done")
 
 
 class ThreadSend(threading.Thread):
@@ -85,7 +95,7 @@ class ThreadSend(threading.Thread):
 
     def run(self):
         cnt_receivers = len(self.receivers)
-        for id_receiver in range(cnt_receivers):
+        for id_receiver in self.receivers:
             ids = get_ids_per_receiver(id_receiver, self.cnt_samples_per_worker, cnt_receivers, self.data_source.size_global, self.pad)
             lo, hi = get_local_subindices(ids, self.data_source.lo, self.data_source.hi)
             send_buf = []
@@ -93,10 +103,10 @@ class ThreadSend(threading.Thread):
                 send_buf = [self.data_source.data[i - self.data_source.lo] for i in ids[lo:hi]]
             size_packet = 100
             cnt_packets = get_cnt_samples_per_worker(len(send_buf), size_packet)
-            self.comm.send(cnt_packets, dest=self.receivers[id_receiver], tag=TAG_CNT_PACKETS)
+            self.comm.send(cnt_packets, dest=id_receiver, tag=TAG_CNT_PACKETS)
 
             for id_packet in range(cnt_packets):
-                self.comm.send(send_buf[id_packet * size_packet: (id_packet + 1) * size_packet], dest=self.receivers[id_receiver], tag=TAG_PAYLOAD)
+                self.comm.send(send_buf[id_packet * size_packet: (id_packet + 1) * size_packet], dest=id_receiver, tag=TAG_PAYLOAD)
 
 
 def shuffle(src, dst, comm, pad=False, count_me_in=True):
@@ -120,10 +130,15 @@ def main():
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     local_data = np.array([], dtype=np.int32)
+    received_payload = []
     if rank == 0:
         local_data = ["apple", "banana", "dekopon"]
-    #if rank == 0:
-    #    local_data = [np.random.random((100, 100)) for i in range(1000)]
+
+#    shuffle(local_data, received_payload, comm, pad=True, count_me_in=True)
+#    received_payload = []
+
+    if rank % 3 ==  0:
+        local_data = [np.random.random((100, 100)) for i in range(1000)]
     #if rank == 1:
     #    local_data = np.arange(3)
 
