@@ -64,10 +64,9 @@ class DataSource:
         return lo, hi
 
 
-#class ThreadReceiv(threading.Thread):
-class ThreadReceiv:
+class ThreadReceiv(threading.Thread):
     def __init__(self, comm, dest):
-        #threading.Thread.__init__(self)
+        threading.Thread.__init__(self)
         self.comm = comm
         self.dest = dest
         logger.debug(f"receiving thread {self.comm.Get_rank()} initilized")
@@ -94,6 +93,7 @@ class ThreadReceiv:
             for i in range(self.comm.size):
                 if i == self.comm.Get_rank():
                     continue
+                print(f"receiver {self.comm.Get_rank()} waiting")
                 status = MPI.Status()
                 cnt_packets = self.comm.recv(source=MPI.ANY_SOURCE, tag=TAG_CNT_PACKETS, status=status)
                 sender_rank = status.Get_source()
@@ -101,6 +101,7 @@ class ThreadReceiv:
                 for i in range(cnt_packets):
                     buf = self.comm.recv(source=sender_rank, tag=TAG_PAYLOAD)
                     self.dest += buf
+                print(f"receiver {self.comm.Get_rank()} done getting {cnt_packets} packets from {sender_rank}")
 
         except Exception:
             exc = sys.exc_info()
@@ -111,9 +112,10 @@ class ThreadReceiv:
         print(f"receiver {self.comm.Get_rank()}  done")
 
 
-class ThreadSend(threading.Thread):
+class ThreadSend():
+#class ThreadSend(threading.Thread):
     def __init__(self, comm, cnt_samples_per_worker, data_source, pad, receivers):
-        threading.Thread.__init__(self)
+#        threading.Thread.__init__(self)
         self.comm = comm
         self.cnt_samples_per_worker = cnt_samples_per_worker
         self.data_source = data_source
@@ -140,10 +142,12 @@ class ThreadSend(threading.Thread):
                 # print(f"send buf on {self.comm.Get_rank()}: {send_buf}")
                 size_packet = 100
                 cnt_packets = get_cnt_samples_per_worker(len(send_buf), size_packet)
-                logger.debug(f"sender {self.comm.Get_rank()} sending {cnt_packets} packets to {rank_receiver}")
+                logger.debug(f"sender {self.comm.Get_rank()} sending {cnt_packets} packets cnt to {rank_receiver}")
                 self.comm.send(cnt_packets, dest=rank_receiver, tag=TAG_CNT_PACKETS)
                 for id_packet in range(cnt_packets):
+                    logger.debug(f"sender {self.comm.Get_rank()} sending {id_packet}th packet to {rank_receiver}")
                     self.comm.send(send_buf[id_packet * size_packet: (id_packet + 1) * size_packet], dest=rank_receiver, tag=TAG_PAYLOAD)
+                    logger.debug(f"sender {self.comm.Get_rank()} done sending {id_packet}th packet to {rank_receiver}")
             print(f"sender {self.comm.Get_rank()}   done")
         except Exception:
             exc = sys.exc_info()
@@ -159,15 +163,15 @@ def shuffle(src, dst, comm, pad=False, count_me_in=True):
     data_source = DataSource(src, comm)
     cnt_samples_per_receiver = get_cnt_samples_per_worker(data_source.size_global, len(ranks_receivers))
     # logger.debug(f"samples per worker = {cnt_samples_per_receiver}")
-    sender = ThreadSend(comm, cnt_samples_per_receiver, data_source, pad, ranks_receivers)
-    sender.start()
+    #sender.start()
     if count_me_in:
         receiver = ThreadReceiv(comm, dst)
-        #receiver.start()
-        receiver.run()
-    #if count_me_in:
+        receiver.start()
+        # receiver.run()
+    sender = ThreadSend(comm, cnt_samples_per_receiver, data_source, pad, ranks_receivers)
+    sender.run()
         #receiver.join()
-    sender.join()
+    #sender.join()
 
 
 def main():
