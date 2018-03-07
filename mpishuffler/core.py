@@ -75,20 +75,28 @@ class ThreadReceiv(threading.Thread):
         cnt_sizes = 0
         cnt_packets = 0
         try:
-            while True:
+            #while True:
+            #    status = MPI.Status()
+            #    print(f"receiver {self.comm.Get_rank()} waiting, got {cnt_sizes} size updates from total of {self.comm.size}")
+            #    buf = self.comm.recv(source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG, status=status)
+            #    tag = status.Get_tag()
+            #    if tag == TAG_CNT_PACKETS:
+            #        cnt_packets += buf
+            #        cnt_sizes += 1
+            #        print(f"receiver {self.comm.Get_rank()} got notification of {buf} more packets")
+            #    else:
+            #        self.dest += buf
+            #        cnt_packets -= 1
+            #    if (cnt_sizes >= self.comm.size) and (cnt_packets == 0):
+            #        break
+            for i in range(self.comm.size):
                 status = MPI.Status()
-                print(f"receiver {self.comm.Get_rank()} waiting, got {cnt_sizes} size updates")
-                buf = self.comm.recv(source=MPI.ANY_SOURCE, tag=MPI.ANY_TAG, status=status)
-                tag = status.Get_tag()
-                if tag == TAG_CNT_PACKETS:
-                    cnt_packets += buf
-                    cnt_sizes += 1
-                    print("received req for ", buf)
-                else:
+                cnt_packets = self.comm.recv(source=MPI.ANY_SOURCE, tag=TAG_CNT_PACKETS, status=status)
+                sender_rank = status.Get_source()
+                for i in range(cnt_packets):
+                    buf = self.comm.recv(source=sender_rank, tag=TAG_PAYLOAD)
                     self.dest += buf
-                    cnt_packets -= 1
-                if (cnt_sizes >= self.comm.size) and (cnt_packets == 0):
-                    break
+
         except Exception:
             exc = sys.exc_info()
             exc_type, exc_obj, exc_trace = exc
@@ -106,7 +114,7 @@ class ThreadSend(threading.Thread):
         self.data_source = data_source
         self.pad = pad
         self.receivers = receivers
-        logger.debug("sending thread initilized")
+        logger.debug(f"sender thread  {self.comm.Get_rank()} initilized")
 
     def run(self):
         try:
@@ -117,19 +125,19 @@ class ThreadSend(threading.Thread):
                 # logger.debug(f"sender {self.comm.Get_rank()} , ids  for rcver {id_receiver} : {ids}")
                 lo, hi = get_local_subindices(ids, self.data_source.lo, self.data_source.hi)
                 send_buf = []
-                logger.debug(f"sender {self.comm.Get_rank()}  subindices for rcver {id_receiver} as {lo}-{hi}, ids = {ids}")
-                print(self.data_source.data)
+                #logger.debug(f"sender {self.comm.Get_rank()}  subindices for rcver {id_receiver} as {lo}-{hi}, ids = {ids}")
+                #print(self.data_source.data)
                 if lo < hi:
                     send_buf = [self.data_source.data[i - self.data_source.lo] for i in ids[lo:hi]]
                 # print(f"send buf on {self.comm.Get_rank()}: {send_buf}")
                 size_packet = 100
+                rank_receiver = self.receivers[id_receiver]
                 cnt_packets = get_cnt_samples_per_worker(len(send_buf), size_packet)
-                logger.debug(f"sender {self.comm.Get_rank()}  sending cnt_packets = {cnt_packets} to {self.receivers[id_receiver]}")
-                self.comm.send(cnt_packets, dest=self.receivers[id_receiver], tag=TAG_CNT_PACKETS)
-
+                #logger.debug(f"sender {self.comm.Get_rank()} sending {cnt_packets} packets to {rank_receiver}")
+                self.comm.ssend(cnt_packets, dest=rank_receiver, tag=TAG_CNT_PACKETS)
                 for id_packet in range(cnt_packets):
-                    self.comm.send(send_buf[id_packet * size_packet: (id_packet + 1) * size_packet], dest=self.receivers[id_receiver], tag=TAG_PAYLOAD)
-            print(f"sender {self.comm.Get_rank()}  done")
+                    self.comm.send(send_buf[id_packet * size_packet: (id_packet + 1) * size_packet], dest=rank_receiver, tag=TAG_PAYLOAD)
+            print(f"sender {self.comm.Get_rank()}   done")
         except Exception:
             exc = sys.exc_info()
             exc_type, exc_obj, exc_trace = exc
@@ -143,7 +151,7 @@ def shuffle(src, dst, comm, pad=False, count_me_in=True):
     ranks_receivers = [i for i in ranks_receivers if i >= 0]
     data_source = DataSource(src, comm)
     cnt_samples_per_receiver = get_cnt_samples_per_worker(data_source.size_global, len(ranks_receivers))
-    logger.debug(f"samples per worker = {cnt_samples_per_receiver}")
+    # logger.debug(f"samples per worker = {cnt_samples_per_receiver}")
     if count_me_in:
         receiver = ThreadReceiv(comm, dst)
         receiver.start()
@@ -155,29 +163,35 @@ def shuffle(src, dst, comm, pad=False, count_me_in=True):
 
 
 def main():
-    logging.basicConfig(level=logging.DEBUG)
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     received_payload = []
     local_data = []
-    if rank == 0:
-        local_data = ["apple", "banana", "dekopon"]
+    #if rank == 0:
+        #local_data = ["apple", "banana", "dekopon"]
+    if rank == 1:
+        local_data = ["a"] * 100000
     received_payload = []
-    shuffle(local_data, received_payload, comm, pad=False, count_me_in=(rank % 3 == 0))
+    #shuffle(local_data, received_payload, comm, pad=False, count_me_in=(rank % 8 == 0))
+
     comm.Barrier()
     if rank == 0:
-        "---- stage 2"
-    #    local_data = np.arange(3)
-    print ("")
-    if rank % 3 ==  0:
-        local_data = [np.random.random((100, 100)) for i in range(100)]
+        print("############################# STAGE 2 ##############################")
+    logging.basicConfig(level=logging.DEBUG)
+    local_data = []
+    if rank % 8 == 0:
+        local_data = [np.random.random((100, 100)) for i in range(1000)]
+    comm.Barrier()
 
     received_payload = []
-    shuffle(local_data, received_payload, comm, pad=False, count_me_in=True)
+    shuffle(local_data, received_payload, comm, pad=True, count_me_in=True)
     # shuffle(local_data, received_payload, comm, pad=True, count_me_in=True)
     comm.Barrier()
-    print(f"rank {rank}   reveived  {len(received_payload)}")
-    # print(f"rank {rank}   reveived  {received_payload}")
+    print(f"rank {rank}   received  {len(received_payload)}")
+    comm.Barrier()
+    if rank  ==  0:
+        print(f"done!")
+
 
 
 if __name__ == "__main__":
