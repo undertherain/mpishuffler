@@ -3,7 +3,7 @@ from mpi4py import MPI
 import numpy as np
 import threading
 import logging
-
+import sys
 
 TAG_CNT_PACKETS = 11
 TAG_PAYLOAD = 12
@@ -64,14 +64,16 @@ class DataSource:
         return lo, hi
 
 
-class ThreadReceiv(threading.Thread):
+#class ThreadReceiv(threading.Thread):
+class ThreadReceiv:
     def __init__(self, comm, dest):
-        threading.Thread.__init__(self)
+        #threading.Thread.__init__(self)
         self.comm = comm
         self.dest = dest
-        logger.debug(f"receiving thread initilized on rank {self.comm.Get_rank()}")
+        logger.debug(f"receiving thread {self.comm.Get_rank()} initilized")
 
     def run(self):
+        logger.debug(f"receiving thread {self.comm.Get_rank()} started")
         cnt_sizes = 0
         cnt_packets = 0
         try:
@@ -90,12 +92,12 @@ class ThreadReceiv(threading.Thread):
             #    if (cnt_sizes >= self.comm.size) and (cnt_packets == 0):
             #        break
             for i in range(self.comm.size):
-                if i == comm.Get_rank():
+                if i == self.comm.Get_rank():
                     continue
                 status = MPI.Status()
                 cnt_packets = self.comm.recv(source=MPI.ANY_SOURCE, tag=TAG_CNT_PACKETS, status=status)
                 sender_rank = status.Get_source()
-                print(f"receiver {self.comm.Get_rank()} got notification of {buf}  packets from {sender_rank}")
+                print(f"receiver {self.comm.Get_rank()} got notification of {cnt_packets}  packets from {sender_rank}")
                 for i in range(cnt_packets):
                     buf = self.comm.recv(source=sender_rank, tag=TAG_PAYLOAD)
                     self.dest += buf
@@ -139,7 +141,7 @@ class ThreadSend(threading.Thread):
                 size_packet = 100
                 cnt_packets = get_cnt_samples_per_worker(len(send_buf), size_packet)
                 logger.debug(f"sender {self.comm.Get_rank()} sending {cnt_packets} packets to {rank_receiver}")
-                self.comm.ssend(cnt_packets, dest=rank_receiver, tag=TAG_CNT_PACKETS)
+                self.comm.send(cnt_packets, dest=rank_receiver, tag=TAG_CNT_PACKETS)
                 for id_packet in range(cnt_packets):
                     self.comm.send(send_buf[id_packet * size_packet: (id_packet + 1) * size_packet], dest=rank_receiver, tag=TAG_PAYLOAD)
             print(f"sender {self.comm.Get_rank()}   done")
@@ -157,13 +159,14 @@ def shuffle(src, dst, comm, pad=False, count_me_in=True):
     data_source = DataSource(src, comm)
     cnt_samples_per_receiver = get_cnt_samples_per_worker(data_source.size_global, len(ranks_receivers))
     # logger.debug(f"samples per worker = {cnt_samples_per_receiver}")
-    if count_me_in:
-        receiver = ThreadReceiv(comm, dst)
-        receiver.start()
     sender = ThreadSend(comm, cnt_samples_per_receiver, data_source, pad, ranks_receivers)
     sender.start()
     if count_me_in:
-        receiver.join()
+        receiver = ThreadReceiv(comm, dst)
+        #receiver.start()
+        receiver.run()
+    #if count_me_in:
+        #receiver.join()
     sender.join()
 
 

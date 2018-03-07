@@ -1,13 +1,13 @@
 #!/bin/sh
-#SBATCH --nodes=25
+#SBATCH --nodes=2
 #SBATCH --ntasks-per-node=8
 #SBATCH --job-name=shuffle
-#SBATCH -t 0-0:20 # time (D-HH:MM) 
+#SBATCH -t 0-0:3 # time (D-HH:MM) 
 
 #  -output-proctable \
 
 mpirun \
-  -np 200 \
+  -np 16 \
   -npernode 8 \
   -x PATH \
   -x LIBRARY_PATH \
