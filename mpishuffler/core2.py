@@ -99,17 +99,19 @@ def shuffle(src, dst, comm, csize, rank, pad=False, count_me_in=True):
         req.Wait()
 
         #recvData = np.zeros((100,3,100,100))
+#        send_buf = np.zeros((10,3,100,100))
         send_buf = np.zeros((100, 100))
         #send_buf = [np.zeros((3, 100, 100))] * 10
         if getSize[0]:
             req = comm.irecv(source=getFrom, tag=TAG_PAYLOAD)
-            #req = comm.Irecv(buf=recvData, source=getFrom, tag=TAG_PAYLOAD)
+            # req = comm.Irecv(buf=recvData, source=getFrom, tag=TAG_PAYLOAD)
 
         if len(send_buf):
             comm.send(send_buf, dest=sendTo, tag=TAG_PAYLOAD)
             #comm.Send(send_buf, dest=sendTo, tag=TAG_PAYLOAD)
 
         if getSize[0]:
+            # req.Wait()
             recvData = req.Wait()
             dst += [recvData]
 
