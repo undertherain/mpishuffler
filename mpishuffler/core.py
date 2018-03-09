@@ -3,6 +3,13 @@ from mpi4py import MPI
 import numpy as np
 import threading
 import logging
+import sys
+
+sys_excepthook = sys.excepthook
+def mpi_excepthook(v, t, tb):
+    sys_excepthook(v, t, tb)
+    mpi4py.MPI.COMM_WORLD.Abort(1)
+sys.excepthook = mpi_excepthook
 
 
 TAG_CNT_PACKETS = 11
