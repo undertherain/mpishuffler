@@ -65,7 +65,9 @@ class DataSource:
         return lo, hi
 
 
-def shuffle(src, dst, comm, csize, rank, pad=False, count_me_in=True):
+def shuffle(src, dst, comm,  pad=False, count_me_in=True):
+    csize = comm.Get_size()
+    rank = comm.Get_rank()
     status = MPI.Status()
     ranks = comm.allgather(comm.Get_rank())
     data_source = DataSource(src, comm)
@@ -123,9 +125,7 @@ def shuffle(src, dst, comm, csize, rank, pad=False, count_me_in=True):
 
 def main():
     comm = MPI.COMM_WORLD
-    csize = comm.Get_size()
     rank = comm.Get_rank()
-
     comm.Barrier()
     if rank == 0:
         print("############################# STAGE 2 ##############################")
@@ -137,7 +137,7 @@ def main():
 
     #received_payload = np.zeros(0)
     received_payload = []
-    shuffle(local_data, received_payload, comm, csize, rank, pad=True, count_me_in=(rank ==1))
+    shuffle(local_data, received_payload, comm,  pad=True, count_me_in=(rank ==1))
     comm.Barrier()
     #print(f"rank {rank}   received  {len(received_payload)}")
     print(f"rank {rank}   received  {received_payload}")
