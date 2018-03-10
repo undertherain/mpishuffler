@@ -98,27 +98,25 @@ def shuffle(src, dst, comm, csize, rank, pad=False, count_me_in=True):
 
         req.Wait()
 
-        #recvData = np.zeros((100,3,100,100))
-#        send_buf = np.zeros((10,3,100,100))
-        send_buf = np.zeros((100, 100))
-        #send_buf = [np.zeros((3, 100, 100))] * 10
+        send_buf = [np.ones((10, 10))]
+
+        recv_buf = bytearray(1<<20)
         if getSize[0]:
-            req = comm.irecv(source=getFrom, tag=TAG_PAYLOAD)
-            # req = comm.Irecv(buf=recvData, source=getFrom, tag=TAG_PAYLOAD)
+            req = comm.irecv(buf=recv_buf, source=getFrom, tag=TAG_PAYLOAD)
 
         if len(send_buf):
             comm.send(send_buf, dest=sendTo, tag=TAG_PAYLOAD)
-            #comm.Send(send_buf, dest=sendTo, tag=TAG_PAYLOAD)
 
         if getSize[0]:
-            # req.Wait()
-            recvData = req.Wait()
+            recvData = req.wait()
             dst += [recvData]
 
         toRight += 1
-        if toRight == csize: toRight = 0
+        if toRight == csize:
+            toRight = 0
         fromLeft -= 1
-        if fromLeft < 0: fromLeft = csize - 1
+        if fromLeft < 0:
+            fromLeft = csize - 1
 
     print(f"getFrom {comm.Get_rank()}   done")
 
@@ -141,7 +139,8 @@ def main():
     received_payload = []
     shuffle(local_data, received_payload, comm, csize, rank, pad=True, count_me_in=(rank ==1))
     comm.Barrier()
-    print(f"rank {rank}   received  {len(received_payload)}")
+    #print(f"rank {rank}   received  {len(received_payload)}")
+    print(f"rank {rank}   received  {received_payload}")
     comm.Barrier()
     if rank == 0:
         print(f"done!")
