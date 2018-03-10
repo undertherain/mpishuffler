@@ -65,7 +65,7 @@ class DataSource:
         return lo, hi
 
 
-def shuffle(src, dst, comm,  pad=False, count_me_in=True):
+def shuffle(src, dst, comm, pad=False, count_me_in=True):
     csize = comm.Get_size()
     rank = comm.Get_rank()
     status = MPI.Status()
@@ -73,9 +73,11 @@ def shuffle(src, dst, comm,  pad=False, count_me_in=True):
     data_source = DataSource(src, comm)
 
     toRight = ranks.index(rank) + 1
-    if toRight == csize: toRight = 0
+    if toRight == csize:
+        toRight = 0
     fromLeft = ranks.index(rank) - 1
-    if fromLeft < 0: fromLeft = csize - 1
+    if fromLeft < 0:
+        fromLeft = csize - 1
 
     cnt_samples_per_worker = get_cnt_samples_per_worker(data_source.size_global, csize)
 
@@ -102,7 +104,7 @@ def shuffle(src, dst, comm,  pad=False, count_me_in=True):
 
         send_buf = [np.ones((10, 10))]
 
-        recv_buf = bytearray(1<<20)
+        recv_buf = bytearray(1 << 20)
         if getSize[0]:
             req = comm.irecv(buf=recv_buf, source=getFrom, tag=TAG_PAYLOAD)
 
