@@ -64,12 +64,24 @@ class DataSource:
         lo = hi - self.size_local
         return lo, hi
 
+    def get_data_for_receiver(self, id_receiver, cnt_receivers, pad):
+        cnt_samples_per_worker = get_cnt_samples_per_worker(self.size_global, cnt_receivers)
+        ids = get_ids_per_receiver(id_receiver, cnt_samples_per_worker, cnt_receivers, self.size_global, pad)
+        lo, hi = get_local_subindices(ids, self.lo, self.hi)
+        if lo < hi:
+            send_buf = [self.data[i - self.lo] for i in ids[lo:hi]]
+        else:
+            send_buf = []
+        return send_buf
+
 
 def shuffle(src, dst, comm, pad=False, count_me_in=True):
     csize = comm.Get_size()
     rank = comm.Get_rank()
-    status = MPI.Status()
     ranks = comm.allgather(comm.Get_rank())
+    ranks_receivers = comm.allgather(rank if count_me_in else -1)
+    #ranks_receivers = [i for i in ranks_receivers if i >= 0]
+    status = MPI.Status()
     data_source = DataSource(src, comm)
 
     toRight = ranks.index(rank) + 1
@@ -79,39 +91,35 @@ def shuffle(src, dst, comm, pad=False, count_me_in=True):
     if fromLeft < 0:
         fromLeft = csize - 1
 
-    cnt_samples_per_worker = get_cnt_samples_per_worker(data_source.size_global, csize)
-
-    for step in range(csize - 1):
+    for step in range(csize):
         getFrom = ranks[fromLeft]
         sendTo = ranks[toRight]
-        # prepare data
-        #ids = get_ids_per_receiver(sendTo, cnt_samples_per_worker, csize,
-        #                           data_source.size_global, pad)
-        #lo, hi = get_local_subindices(ids, data_source.lo, data_source.hi)
-        send_buf = np.zeros(1)
-        send_buf[0] = rank
-        #if lo < hi:
-        #    send_buf = [data_source.data[i - data_source.lo] for i in ids[lo:hi]]
 
-        getSize = np.zeros(1)
-        sendSize = np.zeros(1)
-        sendSize[0] = len(send_buf)
+        #send_buf = np.zeros(1)
+        #send_buf[0] = rank
 
-        req = comm.Irecv(buf=getSize, source=getFrom, tag=TAG_CNT_PACKETS)
-        comm.Send(buf=sendSize, dest=sendTo, tag=TAG_CNT_PACKETS)
+        #getSize = np.zeros(1, dtype=np.int32)
+        #sendSize = np.zeros(1, dtype=np.int32)
+        #sendSize = 1 if toRight == 1 else 0
+        #sendSize[0] = len(send_buf)
 
-        req.Wait()
+        req = comm.irecv(source=getFrom, tag=TAG_CNT_PACKETS)
+        size_send = 1 if toRight == 1 else 0
+        comm.send(size_send, dest=sendTo, tag=TAG_CNT_PACKETS)
 
-        send_buf = [np.ones((10, 10))]
+        get_size = req.wait()
+
+        send_buf = [np.ones((2, 2))]
+        #send_buf = data_source.get_data_for_receiver(toRight, len(ranks_receivers), pad)
 
         recv_buf = bytearray(1 << 20)
-        if getSize[0]:
+        if get_size > 0:
             req = comm.irecv(buf=recv_buf, source=getFrom, tag=TAG_PAYLOAD)
 
         if len(send_buf):
             comm.send(send_buf, dest=sendTo, tag=TAG_PAYLOAD)
 
-        if getSize[0]:
+        if get_size:
             recvData = req.wait()
             dst += [recvData]
 
@@ -122,7 +130,7 @@ def shuffle(src, dst, comm, pad=False, count_me_in=True):
         if fromLeft < 0:
             fromLeft = csize - 1
 
-    print(f"getFrom {comm.Get_rank()}   done")
+    print(f"worker {comm.Get_rank()}   done")
 
 
 def main():
@@ -133,8 +141,10 @@ def main():
         print("############################# STAGE 2 ##############################")
     logging.basicConfig(level=logging.DEBUG)
     local_data = []
-    if rank % 8 == 0:
-        local_data = [np.random.random((100, 100)) for i in range(1000)]
+    if rank == 0:
+        local_data = [1, 2, 3, 4, 5, 6, 7]
+    #if rank % 8 == 0:
+     #   local_data = [np.random.random((2, 2)) for i in range(10)]
     comm.Barrier()
 
     #received_payload = np.zeros(0)
