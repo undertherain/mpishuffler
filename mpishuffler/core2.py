@@ -72,6 +72,7 @@ class DataSource:
             send_buf = [self.data[i - self.lo] for i in ids[lo:hi]]
         else:
             send_buf = []
+        # print(send_buf)
         return send_buf
 
 
@@ -80,7 +81,9 @@ def shuffle(src, dst, comm, pad=False, count_me_in=True):
     rank = comm.Get_rank()
     ranks = comm.allgather(comm.Get_rank())
     ranks_receivers = comm.allgather(rank if count_me_in else -1)
-    #ranks_receivers = [i for i in ranks_receivers if i >= 0]
+    ranks_receivers = [i for i in ranks_receivers if i >= 0]
+    # print(ranks_receivers)
+
     status = MPI.Status()
     data_source = DataSource(src, comm)
 
@@ -95,33 +98,30 @@ def shuffle(src, dst, comm, pad=False, count_me_in=True):
         getFrom = ranks[fromLeft]
         sendTo = ranks[toRight]
 
-        #send_buf = np.zeros(1)
-        #send_buf[0] = rank
-
-        #getSize = np.zeros(1, dtype=np.int32)
-        #sendSize = np.zeros(1, dtype=np.int32)
-        #sendSize = 1 if toRight == 1 else 0
-        #sendSize[0] = len(send_buf)
-
         req = comm.irecv(source=getFrom, tag=TAG_CNT_PACKETS)
-        size_send = 1 if toRight == 1 else 0
+        size_send = 0
+        send_buf = []
+        if toRight in ranks_receivers:
+            id_receiver = ranks_receivers.index(toRight)
+            send_buf = data_source.get_data_for_receiver(id_receiver, len(ranks_receivers), pad)
+            if len(send_buf) > 0:
+                size_send = 1
         comm.send(size_send, dest=sendTo, tag=TAG_CNT_PACKETS)
 
         get_size = req.wait()
 
-        send_buf = [np.ones((2, 2))]
-        #send_buf = data_source.get_data_for_receiver(toRight, len(ranks_receivers), pad)
+        # send_buf = [np.ones((2, 2))]
 
         recv_buf = bytearray(1 << 20)
         if get_size > 0:
             req = comm.irecv(buf=recv_buf, source=getFrom, tag=TAG_PAYLOAD)
 
-        if len(send_buf):
+        if len(send_buf) > 0:
             comm.send(send_buf, dest=sendTo, tag=TAG_PAYLOAD)
 
         if get_size:
             recvData = req.wait()
-            dst += [recvData]
+            dst += recvData
 
         toRight += 1
         if toRight == csize:
@@ -142,14 +142,17 @@ def main():
     logging.basicConfig(level=logging.DEBUG)
     local_data = []
     if rank == 0:
-        local_data = [1, 2, 3, 4, 5, 6, 7]
+#        local_data = ["a", "b", "c", "d", "e", "f", "g"]
+        local_data = ["a", "b", "c", "d"]
+    if rank == 1:
+        local_data = ["e", "f", "g"]
     #if rank % 8 == 0:
      #   local_data = [np.random.random((2, 2)) for i in range(10)]
     comm.Barrier()
 
     #received_payload = np.zeros(0)
     received_payload = []
-    shuffle(local_data, received_payload, comm,  pad=True, count_me_in=(rank ==1))
+    shuffle(local_data, received_payload, comm,  pad=True, count_me_in=(rank > 1))
     comm.Barrier()
     #print(f"rank {rank}   received  {len(received_payload)}")
     print(f"rank {rank}   received  {received_payload}")

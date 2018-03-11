@@ -153,6 +153,7 @@ class ThreadSend(threading.Thread):
 def shuffle(src, dst, comm, pad=False, count_me_in=True):
     ranks_receivers = comm.allgather(comm.Get_rank() if count_me_in else -1)
     ranks_receivers = [i for i in ranks_receivers if i >= 0]
+    print(ranks_receivers)
     data_source = DataSource(src, comm)
     cnt_samples_per_receiver = get_cnt_samples_per_worker(data_source.size_global, len(ranks_receivers))
     # logger.debug(f"samples per worker = {cnt_samples_per_receiver}")
