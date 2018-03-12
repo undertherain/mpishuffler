@@ -10,7 +10,7 @@ mpirun \
   -np 200 \
   -npernode 10 \
   -mca btl_openib_ib_timeout 30 \
-  -mca btl tcp,sm,self \
+  -mca btl openib,sm,self \
   -x PATH \
   -x LIBRARY_PATH \
   -x LD_LIBRARY_PATH \

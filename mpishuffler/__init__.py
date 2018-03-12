@@ -1,1 +1,1 @@
-from .core import shuffle
+from .core2 import shuffle
