@@ -6,6 +6,7 @@ import logging
 
 TAG_CNT_PACKETS = 11
 TAG_PAYLOAD = 12
+size_packet = 1
 
 mpi4py.rc.threaded = False
 
@@ -82,8 +83,6 @@ def shuffle(src, dst, comm, pad=False, count_me_in=True):
     ranks = comm.allgather(comm.Get_rank())
     ranks_receivers = comm.allgather(rank if count_me_in else -1)
     ranks_receivers = [i for i in ranks_receivers if i >= 0]
-    # print(ranks_receivers)
-
     status = MPI.Status()
     data_source = DataSource(src, comm)
 
@@ -99,29 +98,29 @@ def shuffle(src, dst, comm, pad=False, count_me_in=True):
         sendTo = ranks[toRight]
 
         req = comm.irecv(source=getFrom, tag=TAG_CNT_PACKETS)
-        size_send = 0
+        cnt_packets_to_send = 0
         send_buf = []
         if toRight in ranks_receivers:
             id_receiver = ranks_receivers.index(toRight)
             send_buf = data_source.get_data_for_receiver(id_receiver, len(ranks_receivers), pad)
             if len(send_buf) > 0:
-                size_send = 1
-        comm.send(size_send, dest=sendTo, tag=TAG_CNT_PACKETS)
+                cnt_packets_to_send = get_cnt_samples_per_worker(len(send_buf), size_packet)
+        comm.send(cnt_packets_to_send, dest=sendTo, tag=TAG_CNT_PACKETS)
 
-        get_size = req.wait()
+        cnt_packets_to_receive = req.wait()
 
-        # send_buf = [np.ones((2, 2))]
+        recv_buf = bytearray(1 << 25)
+        for id_packet in range(max(cnt_packets_to_send, cnt_packets_to_receive)):
+            if id_packet < cnt_packets_to_receive:
+                req = comm.irecv(buf=recv_buf, source=getFrom, tag=TAG_PAYLOAD)
 
-        recv_buf = bytearray(1 << 20)
-        if get_size > 0:
-            req = comm.irecv(buf=recv_buf, source=getFrom, tag=TAG_PAYLOAD)
+            if id_packet < cnt_packets_to_send:
+                packet = send_buf[id_packet * size_packet: (id_packet + 1) * size_packet]
+                comm.send(packet, dest=sendTo, tag=TAG_PAYLOAD)
 
-        if len(send_buf) > 0:
-            comm.send(send_buf, dest=sendTo, tag=TAG_PAYLOAD)
-
-        if get_size:
-            recvData = req.wait()
-            dst += recvData
+            if id_packet < cnt_packets_to_receive:
+                recvData = req.wait()
+                dst += recvData
 
         toRight += 1
         if toRight == csize:
@@ -144,15 +143,16 @@ def main():
     if rank == 0:
 #        local_data = ["a", "b", "c", "d", "e", "f", "g"]
         local_data = ["a", "b", "c", "d"]
+#        local_data = ["a", "b"]
     if rank == 1:
         local_data = ["e", "f", "g"]
     #if rank % 8 == 0:
-     #   local_data = [np.random.random((2, 2)) for i in range(10)]
+        #local_data = [np.random.random((3, 100, 100)) for i in range(100)]
     comm.Barrier()
 
     #received_payload = np.zeros(0)
     received_payload = []
-    shuffle(local_data, received_payload, comm,  pad=True, count_me_in=(rank > 1))
+    shuffle(local_data, received_payload, comm,  pad=True, count_me_in=(rank == 1))
     comm.Barrier()
     #print(f"rank {rank}   received  {len(received_payload)}")
     print(f"rank {rank}   received  {received_payload}")
