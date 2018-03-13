@@ -149,17 +149,17 @@ def main():
     local_data = []
     if rank == 0:
 #        local_data = ["a", "b", "c", "d", "e", "f", "g"]
-        local_data = ["a", "b", "c", "d"]
+        local_data = ["/path/to/tar/file091.tar.gz"] * 7
 #        local_data = ["a", "b"]
-    if rank == 1:
-        local_data = ["e", "f", "g"]
+#    if rank == 1:
+#        local_data = ["e", "f", "g"]
     #if rank % 8 == 0:
         #local_data = [np.random.random((3, 100, 100)) for i in range(100)]
     comm.Barrier()
 
     #received_payload = np.zeros(0)
     received_payload = []
-    shuffle(local_data, received_payload, comm,  pad=True, count_me_in=True)
+    shuffle(local_data, received_payload, comm,  pad=False, count_me_in=(rank % 3 == 0))
     comm.Barrier()
     #print(f"rank {rank}   received  {len(received_payload)}")
     print(f"rank {rank}   received  {received_payload}")
