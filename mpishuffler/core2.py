@@ -96,7 +96,7 @@ def shuffle(src, dst, comm, pad=False, count_me_in=True):
     for step in range(csize - 1):
         getFrom = ranks[fromLeft]
         sendTo = ranks[toRight]
-        print(f"step {step}, rank {rank}, get from {getFrom}, send to {sendTo}")
+        # print(f"step {step}, rank {rank}, get from {getFrom}, send to {sendTo}")
         req = comm.irecv(source=getFrom, tag=TAG_CNT_PACKETS)
         cnt_packets_to_send = 0
         send_buf = []
@@ -131,12 +131,12 @@ def shuffle(src, dst, comm, pad=False, count_me_in=True):
 
         #copy from oneself
     if rank in ranks_receivers:
-        id_receiver = ranks_receivers.index(toRight)
+        id_receiver = ranks_receivers.index(rank)
         send_buf = data_source.get_data_for_receiver(id_receiver, len(ranks_receivers), pad)
         dst += send_buf
 
 
-    print(f"worker {comm.Get_rank()}   done")
+    # print(f"worker {comm.Get_rank()}   done")
 
 
 def main():
