@@ -14,5 +14,5 @@ mpirun \
   -x PATH \
   -x LIBRARY_PATH \
   -x LD_LIBRARY_PATH \
-    python3 ./core.py
+    python3 ./core2.py
 
